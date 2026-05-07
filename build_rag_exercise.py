@@ -5,6 +5,8 @@ from typing import List
 
 from langchain_community.document_loaders import PyMuPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
 
 # ── Configuration ──────────────────────────────────────────────────────────
 DATA_DIR = pathlib.Path(r"D:\AI Study\RAG\local_data")
@@ -50,13 +52,34 @@ def load_pdf_chunks(path: str):
     return chunks
 
 
+# ── Step 4 – Embed & Store in Chroma ──────────────────────────────────────
+def build_vectorstore(chunks):
+    """Embed chunks with a local HuggingFace model and persist to Chroma."""
+    print("Loading embedding model (first run downloads ~90 MB)...")
+    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+
+    print(f"Embedding {len(chunks)} chunks and storing in Chroma...")
+    vectorstore = Chroma.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        collection_name=COLLECTION,
+        persist_directory=INDEX_DIR,
+    )
+    print(f"✔ Vectorstore saved to {INDEX_DIR}")
+    return vectorstore
+
+
 # ── Main ───────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     pdf_path = ensure_pdf()
-    docs = load_pdf_chunks(pdf_path)
+    chunks = load_pdf_chunks(pdf_path)
+    print(f"✔ {len(chunks)} chunks ready\n")
+
+    vectorstore = build_vectorstore(chunks)
 
     # Quick sanity check
-    print(f"\n── Sample from page 1 ──")
-    print(docs[0].page_content[:300])
-    print(f"\n── Metadata ──")
-    print(docs[0].metadata)
+    results = vectorstore.similarity_search("What is deep learning?", k=2)
+    print("\n── Smoke test: top 2 results for 'What is deep learning?' ──")
+    for i, r in enumerate(results, 1):
+        print(f"\n[{i}] Page {r.metadata.get('page')} | chunk {r.metadata.get('chunk_id')}")
+        print(r.page_content[:200])
